@@ -111,6 +111,7 @@ enum fix_kind {
     FIX_LAG_OUT,
     FIX_HOST_STALL,
     FIX_GADGET_EVENT_TIME,
+    FIX_HEAD_POINT,
     FIX_KINDS
 };
 
@@ -126,6 +127,7 @@ static const char* const FIX_NAMES[FIX_KINDS] = {
     "remote player lagged out",
     "stall on a silent host",
     "remote gadget event time",
+    "camera head point from an empty camera matrix",
 };
 
 static int fixes_on(void) {
@@ -402,6 +404,36 @@ static float fix_gadget_event(
 }
 
 /* One map's wraps, in mp/fixes.py FIXED's order. */
+/* ---- The camera's first frame: the head point from an empty camera matrix ----
+ * The spawn (0x005271F0 in map 48) computes the head point the camera follows, player +0x1180 =
+ * position + up * height (0x0050C348, level 39's 0x00646B98), with up the third row of the matrix
+ * that +0x1288 names. A local player's is its camera matrix (+0x1100), which only the player's
+ * camera update (0x0050A4B8) fills, and that does not run before the match starts: up is zero and
+ * the head point is the feet. On the first gameplay frame the focus body starts from it, the
+ * camera is placed there, and in Aquatos Sewers (48) the feet are under a puddle's surface: the
+ * camera's underwater flag is set and never cleared, the picture stays blue. While the camera
+ * matrix is still empty, the head point is taken from the moby's own matrix (+0x20), as the game
+ * does for a player without a camera. */
+#define PLAYER_HEAD_MATRIX 0x1288u /* the matrix whose third row is up (+0x20 or +0x1100) */
+#define PLAYER_CAMERA_MATRIX 0x1100u
+#define PLAYER_MOBY_MATRIX 0x20u
+
+static float fix_head_point(int map, int player, float (*game)(int)) {
+    const gaddr p = (gaddr)player;
+    if (!fixes_on() || p == 0 || GREF(gaddr, p + PLAYER_HEAD_MATRIX) != p + PLAYER_CAMERA_MATRIX) {
+        return game(player);
+    }
+    const gaddr up = p + PLAYER_CAMERA_MATRIX + 0x20u;
+    if (GREF(uint32_t, up) != 0 || GREF(uint32_t, up + 4u) != 0 || GREF(uint32_t, up + 8u) != 0) {
+        return game(player);
+    }
+    GREF(gaddr, p + PLAYER_HEAD_MATRIX) = p + PLAYER_MOBY_MATRIX;
+    const float result = game(player);
+    GREF(gaddr, p + PLAYER_HEAD_MATRIX) = p + PLAYER_CAMERA_MATRIX;
+    fixed(FIX_HEAD_POINT, map);
+    return result;
+}
+
 #define MP_FIX(                                                                                    \
     m,                                                                                             \
     equip,                                                                                         \
@@ -419,7 +451,8 @@ static float fix_gadget_event(
     net_apply,                                                                                     \
     local_update,                                                                                  \
     player_update,                                                                                 \
-    gadget_event                                                                                   \
+    gadget_event,                                                                                  \
+    head_point                                                                                     \
 )                                                                                                  \
     int mp_func_L##m##_##equip(int a0) {                                                           \
         return fix_equip(m, a0, mp_func_L##m##_##equip##__game);                                   \
@@ -473,6 +506,9 @@ static float fix_gadget_event(
     }                                                                                              \
     float mp_func_L##m##_##gadget_event(int a0, int a1, int a2, int a3, int a4, int a5) {          \
         return fix_gadget_event(m, a0, a1, a2, a3, a4, a5, mp_func_L##m##_##gadget_event##__game); \
+    }                                                                                              \
+    float mp_func_L##m##_##head_point(int a0) {                                                    \
+        return fix_head_point(m, a0, mp_func_L##m##_##head_point##__game);                         \
     }
 
 #include "mp_fixes.h"

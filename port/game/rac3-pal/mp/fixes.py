@@ -50,6 +50,8 @@ FIXED = [
      "the local player's update (stalls on a silent host)"),
     ("00656F28", "gameplay", "rac3PlayerUpdateMap", "wrap", "a player's update (deaths, the base)"),
     ("00672DD8", "net", "rac3GadgetEventMap", "wrap", "a gadget event's dispatch (shots, at a time)"),
+    ("00646B98", "gameplay", "rac3PlayerHeadPointMap", "wrap",
+     "the player's camera head point (player +0x1180) from its camera matrix"),
 ]
 
 BEGIN = "# --- the stock-bug fixes' rows: written by mp/fixes.py, do not edit by hand ---"
